@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Ticket Analysis Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .chart-container {
+            position: relative;
+            height: 40vh;
+            width: 100%;
+        }
+        #price-by-year-chart, #price-by-sightline-chart {
+            cursor: pointer;
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-white">Interactive Ticket Analysis Dashboard</h1>
+            <p class="text-gray-400 mt-2">Click on chart or table elements to filter the key metrics.</p>
+        </header>
+
+        <!-- File Upload Section -->
+        <div id="upload-section" class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8 text-center">
+            <label for="csv-file" class="block mb-2 text-lg font-semibold text-white">Upload Data Here</label>
+            <p class="text-gray-400 text-sm mb-4">Only .csv files are accepted.</p>
+            <input type="file" id="csv-file" accept=".csv" class="block w-full max-w-md mx-auto text-sm text-gray-400
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-indigo-600 file:text-white
+                hover:file:bg-indigo-700 cursor-pointer"/>
+        </div>
+        
+        <!-- Loading Spinner -->
+        <div id="loading" class="hidden text-center my-8">
+             <svg class="animate-spin h-8 w-8 text-white mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-2 text-gray-400">Processing data...</p>
+        </div>
+
+        <!-- Dashboard Content (hidden until file is uploaded) -->
+        <main id="dashboard-content" class="hidden">
+            <!-- Filter Status -->
+            <section id="filter-status-container" class="hidden bg-gray-700/50 p-3 rounded-lg mb-6 items-center">
+                <div class="flex flex-wrap items-center gap-2">
+                     <span class="font-semibold text-gray-300">Active Filters:</span>
+                     <div id="filter-tags" class="flex flex-wrap gap-2"></div>
+                     <button id="reset-filters-btn" class="text-sm font-semibold text-white bg-red-600 hover:bg-red-700 px-3 py-1 rounded-full">Clear All</button>
+                </div>
+            </section>
+        
+            <!-- Key Metrics -->
+            <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h3 class="text-gray-400 text-sm font-medium">Total Transactions</h3>
+                    <p id="total-transactions" class="text-3xl font-bold text-white mt-2">0</p>
+                </div>
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h3 class="text-gray-400 text-sm font-medium">Avg. Ticket Price</h3>
+                    <p id="avg-price" class="text-3xl font-bold text-white mt-2">$0.00</p>
+                </div>
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h3 class="text-gray-400 text-sm font-medium">Highest Ticket Price</h3>
+                    <p id="max-price" class="text-3xl font-bold text-white mt-2">$0.00</p>
+                </div>
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h3 class="text-gray-400 text-sm font-medium">Lowest Ticket Price</h3>
+                    <p id="min-price" class="text-3xl font-bold text-white mt-2">$0.00</p>
+                </div>
+            </section>
+
+            <!-- Charts -->
+            <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-white">Average Price by Year</h3>
+                    <div class="chart-container">
+                        <canvas id="price-by-year-chart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold mb-4 text-white">Average Price by Sightline</h3>
+                    <div class="chart-container">
+                        <canvas id="price-by-sightline-chart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Summary by Price Code Table -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-lg mb-8">
+                <h3 class="text-xl font-semibold mb-4 text-white">Summary by Price Code</h3>
+                <div class="overflow-y-auto max-h-96">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-700 text-gray-300 uppercase text-sm sticky top-0">
+                            <tr>
+                                <th class="p-3">Price Code</th>
+                                <th class="p-3">Total Tickets Sold</th>
+                                <th class="p-3">Total Net Profit</th>
+                            </tr>
+                        </thead>
+                        <tbody id="section-summary-body">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Data Table -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                <h3 class="text-xl font-semibold mb-4 text-white">Transaction Details</h3>
+                 <div class="mb-4">
+                    <input type="text" id="table-search" placeholder="Search table..." class="w-full p-2 rounded bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-700 text-gray-300 uppercase text-sm">
+                            <tr></tr>
+                        </thead>
+                        <tbody id="data-table-body">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const fileInput = document.getElementById('csv-file');
+            const uploadSection = document.getElementById('upload-section');
+            const dashboardContent = document.getElementById('dashboard-content');
+            const loadingIndicator = document.getElementById('loading');
+            const tableSearch = document.getElementById('table-search');
+            const resetFiltersBtn = document.getElementById('reset-filters-btn');
+            const filterTagsContainer = document.getElementById('filter-tags');
+
+            let rawData = [];
+            let chartInstances = {};
+            let activeFilters = {};
+
+            fileInput.addEventListener('change', handleFile);
+            tableSearch.addEventListener('input', (e) => renderTable(applyFilters(), e.target.value));
+            resetFiltersBtn.addEventListener('click', resetFilters);
+            filterTagsContainer.addEventListener('click', handleTagClick);
+
+            function handleFile(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    loadingIndicator.classList.remove('hidden');
+                    dashboardContent.classList.add('hidden');
+                    resetFilters();
+                    
+                    Papa.parse(file, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: function(results) {
+                            setTimeout(() => {
+                                rawData = cleanData(results.data);
+                                renderDashboard(rawData);
+                                loadingIndicator.classList.add('hidden');
+                                dashboardContent.classList.remove('hidden');
+                                uploadSection.classList.add('hidden');
+                            }, 500);
+                        }
+                    });
+                }
+            }
+            
+            function cleanData(data) {
+                const mappedData = data.map(row => {
+                    const yearStr = (row.Year || '').replace('FB', '').trim();
+                    const priceCode = row['Price Code'] || '';
+                    const priceCodeGroup = priceCode.trim().charAt(0).toUpperCase();
+
+                    return {
+                        ...row,
+                        'Price Code Group': priceCodeGroup,
+                        'Year': yearStr ? 2000 + parseInt(yearStr, 10) : null,
+                        'Number of Tickets': parseInt(row['Number of Tickets'], 10) || 0,
+                        'Price': parseFloat((row.Price || '0').replace(/[^0-9.-]+/g,"")) || 0,
+                        'AVG Price/Ticket': parseFloat((row['AVG Price/Ticket'] || '0').replace(/[^0-9.-]+/g,"")) || 0,
+                        'Net Profit': parseFloat((row['Net Profit'] || '0').replace(/[^0-9.-]+/g,"")) || 0
+                    };
+                });
+                return mappedData.filter(row => row.Year && row.Sightline && row.Sightline.trim() !== '#N/A' && row.Sightline.trim() !== '' && row['Price Code Group'] !== '');
+            }
+
+            function applyFilters() {
+                let filtered = rawData;
+                for (const key in activeFilters) {
+                    filtered = filtered.filter(row => String(row[key]) === String(activeFilters[key]));
+                }
+                return filtered;
+            }
+            
+            function addFilter(key, value) {
+                activeFilters[key] = value;
+                updateDashboard();
+            }
+
+            function removeFilter(key) {
+                delete activeFilters[key];
+                updateDashboard();
+            }
+
+            function resetFilters() {
+                activeFilters = {};
+                if (rawData.length > 0) {
+                    updateDashboard();
+                }
+            }
+            
+            function handleTagClick(event) {
+                const target = event.target.closest('.filter-tag-remove');
+                if (target) {
+                    const key = target.dataset.key;
+                    removeFilter(key);
+                }
+            }
+
+            function updateDashboard() {
+                const filteredData = applyFilters();
+                renderKPIs(filteredData);
+                // Only the KPIs and the detailed table need to update based on filters
+                renderTable(filteredData, tableSearch.value);
+                updateFilterStatus();
+            }
+            
+            function updateFilterStatus() {
+                const filterContainer = document.getElementById('filter-status-container');
+                filterTagsContainer.innerHTML = '';
+                if (Object.keys(activeFilters).length > 0) {
+                    filterContainer.classList.remove('hidden');
+                    for (const key in activeFilters) {
+                        const tag = document.createElement('span');
+                        tag.className = 'bg-indigo-600 text-white text-sm font-medium pl-2.5 pr-1 py-0.5 rounded-full inline-flex items-center';
+                        tag.innerHTML = `
+                            ${key}: ${activeFilters[key]}
+                            <button class="filter-tag-remove ml-1.5 flex-shrink-0 h-4 w-4 rounded-full inline-flex items-center justify-center text-indigo-200 hover:bg-indigo-500 hover:text-white" data-key="${key}">
+                                &times;
+                            </button>
+                        `;
+                        filterTagsContainer.appendChild(tag);
+                    }
+                } else {
+                    filterContainer.classList.add('hidden');
+                }
+            }
+
+            function renderDashboard(data) {
+                renderKPIs(data);
+                renderCharts(data);
+                renderSectionSummary(data);
+                renderTable(data);
+            }
+
+            function renderKPIs(data) {
+                const totalTransactions = data.length;
+                const avgPrice = data.reduce((sum, row) => sum + row['AVG Price/Ticket'], 0) / totalTransactions || 0;
+                const prices = data.map(row => row['AVG Price/Ticket']).filter(p => p > 0);
+                const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
+                const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+
+                document.getElementById('total-transactions').textContent = totalTransactions.toLocaleString();
+                document.getElementById('avg-price').textContent = formatCurrency(avgPrice);
+                document.getElementById('max-price').textContent = formatCurrency(maxPrice);
+                document.getElementById('min-price').textContent = formatCurrency(minPrice);
+            }
+            
+            function renderCharts(data) {
+                const priceByYear = aggregateData(data, 'Year', 'AVG Price/Ticket');
+                const priceBySightline = aggregateData(data, 'Sightline', 'AVG Price/Ticket');
+                const sortedSightline = Object.entries(priceBySightline).sort(([,a],[,b]) => b.average - a.average).reduce((r, [k, v]) => ({ ...r, [k]: v }), {});
+
+                createChart('price-by-year-chart', 'bar', 'Avg. Price', Object.keys(priceByYear), Object.values(priceByYear).map(d => d.average), 'Year');
+                createChart('price-by-sightline-chart', 'bar', 'Avg. Price', Object.keys(sortedSightline), Object.values(sortedSightline).map(d => d.average), 'Sightline', true);
+            }
+            
+            function createChart(canvasId, type, label, labels, data, filterKey, horizontal = false) {
+                const ctx = document.getElementById(canvasId).getContext('2d');
+                if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
+
+                chartInstances[canvasId] = new Chart(ctx, {
+                    type: type,
+                    data: {
+                        labels: labels,
+                        datasets: [{ label, data, backgroundColor: 'rgba(79, 70, 229, 0.8)', borderColor: 'rgba(79, 70, 229, 1)', borderWidth: 1 }]
+                    },
+                    options: {
+                        indexAxis: horizontal ? 'y' : 'x',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' } },
+                            y: { ticks: { color: '#9ca3af' }, grid: { color: '#374151' }, beginAtZero: true }
+                        },
+                        onClick: (event, elements) => {
+                            if (elements.length > 0) {
+                                const elementIndex = elements[0].index;
+                                const value = labels[elementIndex];
+                                addFilter(filterKey, value);
+                            }
+                        }
+                    }
+                });
+            }
+
+            function renderSectionSummary(data) {
+                const tableBody = document.getElementById('section-summary-body');
+                tableBody.innerHTML = '';
+                const summaryData = aggregateSectionSummary(data);
+                const sortedPriceCodes = Object.keys(summaryData).sort();
+
+                sortedPriceCodes.forEach(priceCodeGroup => {
+                    const rowData = summaryData[priceCodeGroup];
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b border-gray-700 hover:bg-gray-600'; // Kept hover for visual feedback
+                    tr.innerHTML = `<td class="p-3">${priceCodeGroup}</td><td class="p-3">${rowData.totalTickets.toLocaleString()}</td><td class="p-3">${formatCurrency(rowData.totalNetProfit)}</td>`;
+                    // Removed the click event listener here
+                    tableBody.appendChild(tr);
+                });
+            }
+
+            function renderTable(data, searchTerm = '') {
+                const tableBody = document.getElementById('data-table-body');
+                const tableHead = tableBody.previousElementSibling.querySelector('tr');
+                tableBody.innerHTML = '';
+                tableHead.innerHTML = '';
+                if (data.length === 0) return;
+                
+                const headers = Object.keys(data[0]);
+                headers.forEach(header => {
+                    const th = document.createElement('th');
+                    th.className = 'p-3';
+                    th.textContent = header;
+                    tableHead.appendChild(th);
+                });
+                
+                const lowerCaseSearchTerm = searchTerm.toLowerCase();
+                const filteredData = data.filter(row => 
+                    Object.values(row).some(value => String(value).toLowerCase().includes(lowerCaseSearchTerm))
+                );
+
+                filteredData.slice(0, 100).forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b border-gray-700 hover:bg-gray-600';
+                    headers.forEach(header => {
+                        const td = document.createElement('td');
+                        td.className = 'p-3';
+                        let value = row[header];
+                        if (['Price', 'AVG Price/Ticket', 'Net Profit'].includes(header)) value = formatCurrency(value);
+                        td.textContent = value;
+                        tr.appendChild(td);
+                    });
+                    tableBody.appendChild(tr);
+                });
+            }
+
+            function aggregateData(data, groupByKey, valueKey) {
+                const groups = data.reduce((acc, row) => {
+                    const key = row[groupByKey];
+                    if (!key) return acc;
+                    if (!acc[key]) acc[key] = { sum: 0, count: 0 };
+                    acc[key].sum += row[valueKey];
+                    acc[key].count++;
+                    return acc;
+                }, {});
+                
+                return Object.entries(groups).reduce((acc, [key, {sum, count}]) => {
+                    acc[key] = { sum, count, average: (sum / count) || 0 };
+                    return acc;
+                }, {});
+            }
+            
+            function aggregateSectionSummary(data) {
+                return data.reduce((acc, row) => {
+                    const priceCodeGroup = row['Price Code Group'];
+                    if (!priceCodeGroup || priceCodeGroup.trim() === '') return acc;
+                    if (!acc[priceCodeGroup]) acc[priceCodeGroup] = { totalTickets: 0, totalNetProfit: 0 };
+                    acc[priceCodeGroup].totalTickets += row['Number of Tickets'];
+                    acc[priceCodeGroup].totalNetProfit += row['Net Profit'];
+                    return acc;
+                }, {});
+            }
+            
+            function formatCurrency(value) {
+                return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value || 0);
+            }
+        });
+    </script>
+</body>
+</html>
+
